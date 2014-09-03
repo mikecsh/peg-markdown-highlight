@@ -12,19 +12,6 @@
 #define kStyleParsingErrorInfoKey_ErrorMessage @"message"
 #define kStyleParsingErrorInfoKey_LineNumber @"lineNumber"
 
-void styleparsing_error_callback(char *error_message, int line_number, void *context_data)
-{
-	NSString *errMsg = @(error_message);
-	if (errMsg == nil)
-		NSLog(@"Cannot interpret error message as UTF-8: '%s'", error_message);
-    
-	[(__bridge HGMarkdownHighlighter *)context_data
-     performSelector:@selector(handleStyleParsingError:)
-     withObject:@{kStyleParsingErrorInfoKey_ErrorMessage: errMsg,
-                  kStyleParsingErrorInfoKey_LineNumber: @(line_number)
-                  }];
-}
-
 
 // 'private members' class extension
 @interface HGMarkdownHighlighter ()
@@ -43,8 +30,25 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 @property(strong) NSDictionary *defaultTypingAttributes;
 
 - (NSFontTraitMask) getClearFontTraitMask:(NSFontTraitMask)currentFontTraitMask;
+- (void) handleStyleParsingError:(NSDictionary *)errorInfo;
 
 @end
+
+
+
+void styleparsing_error_callback(char *error_message, int line_number, void *context_data)
+{
+	NSString *errMsg = @(error_message);
+	if (errMsg == nil)
+		NSLog(@"Cannot interpret error message as UTF-8: '%s'", error_message);
+
+	[(__bridge HGMarkdownHighlighter *)context_data
+     performSelector:@selector(handleStyleParsingError:)
+     withObject:@{kStyleParsingErrorInfoKey_ErrorMessage: errMsg,
+                  kStyleParsingErrorInfoKey_LineNumber: @(line_number)
+                  }];
+}
+
 
 
 @implementation HGMarkdownHighlighter
@@ -248,7 +252,8 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 - (void) clearHighlightingForRange:(NSRange)range
 {
 	NSTextStorage *textStorage = [_targetTextView textStorage];
-	
+
+    [textStorage setAttributes:@{NSFontAttributeName: (self.defaultTypingAttributes)[NSFontAttributeName] } range:range];
 	[textStorage applyFontTraits:_clearFontTraitMask range:range];
 	[textStorage removeAttribute:NSBackgroundColorAttributeName range:range];
 	[textStorage removeAttribute:NSLinkAttributeName range:range];
@@ -348,11 +353,10 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 
 - (void) applyVisibleRangeHighlighting
 {
-	NSRect visibleRect = [[[self.targetTextView enclosingScrollView] contentView] documentVisibleRect];
     NSLayoutManager *layoutManager = [self.targetTextView layoutManager];
-	NSRange visibleGlyphRange = [layoutManager glyphRangeForBoundingRect:visibleRect inTextContainer:[self.targetTextView textContainer]];
+	NSRange visibleGlyphRange = [layoutManager glyphRangeForTextContainer:[self.targetTextView textContainer]];
 	NSRange visibleCharRange = [layoutManager characterRangeForGlyphRange:visibleGlyphRange actualGlyphRange:NULL];
-    
+
 	if (_cachedElements == NULL)
 		return;
     
@@ -417,13 +421,6 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 				   repeats:NO
 				   ];
     [[NSRunLoop currentRunLoop] addTimer:self.updateTimer forMode:NSRunLoopCommonModes];
-}
-
-- (void) textViewDidScroll:(NSNotification *)notification
-{
-	if (_cachedElements == NULL)
-		return;
-	[self applyVisibleRangeHighlighting];
 }
 
 
@@ -663,18 +660,6 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 		 name:NSTextDidChangeNotification
 		 object:self.targetTextView];
 	
-	NSScrollView *scrollView = [self.targetTextView enclosingScrollView];
-	if (scrollView != nil)
-	{
-		[[scrollView contentView] setPostsBoundsChangedNotifications: YES];
-		[[NSNotificationCenter defaultCenter]
-		 addObserver:self
-		 selector:@selector(textViewDidScroll:)
-		 name:NSViewBoundsDidChangeNotification
-		 object:[scrollView contentView]
-		 ];
-	}
-	
 	self.isActive = YES;
 }
 
@@ -687,19 +672,6 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	 removeObserver:self
 	 name:NSTextDidChangeNotification
 	 object:self.targetTextView];
-	
-	NSScrollView *scrollView = [self.targetTextView enclosingScrollView];
-	if (scrollView != nil)
-	{
-		// let's not change this here... the user may wish to control it
-		//[[scrollView contentView] setPostsBoundsChangedNotifications: NO];
-		
-		[[NSNotificationCenter defaultCenter]
-		 removeObserver:self
-		 name:NSViewBoundsDidChangeNotification
-		 object:[scrollView contentView]
-		 ];
-	}
 	
 	[self clearElementsCache];
 	self.isActive = NO;
