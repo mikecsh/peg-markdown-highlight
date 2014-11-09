@@ -9,6 +9,7 @@
 #import "pmh_definitions.h"
 #import "HGMarkdownHighlightingStyle.h"
 
+typedef void(^HGStyleCompleteCallback)();
 typedef void(^HGStyleParsingErrorCallback)(NSArray *errorMessages);
 
 /**
@@ -87,6 +88,10 @@ typedef void(^HGStyleParsingErrorCallback)(NSArray *errorMessages);
  * \sa pmh_extensions
  */
 @property int extensions;
+
+/** \brief Callback to call each time parsing and highlighting finishes
+ */
+@property (nonatomic, copy) HGStyleCompleteCallback parseAndHighlightCallback;
 
 
 /** \brief Init new instance while setting targetTextView. */

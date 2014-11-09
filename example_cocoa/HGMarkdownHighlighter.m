@@ -198,6 +198,10 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 		 performSelectorOnMainThread:@selector(requestParsing)
 		 withObject:nil
 		 waitUntilDone:NO];
+    else if (self.parseAndHighlightCallback != nil)
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.parseAndHighlightCallback();
+        });
 }
 
 - (void) requestParsing
