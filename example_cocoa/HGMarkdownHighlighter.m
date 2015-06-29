@@ -22,6 +22,8 @@
 	BOOL _workerThreadResultsInvalid;
 	BOOL _styleDependenciesPending;
 	NSMutableArray *_styleParsingErrors;
+
+    BOOL hightlighAllAfterParse;
 }
 
 @property(strong) NSTimer *updateTimer;
@@ -67,6 +69,8 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	_parseAndHighlightAutomatically = YES;
 	_waitInterval = 1;
 	_extensions = pmh_EXT_NONE;
+
+    hightlighAllAfterParse = NO;
 	
 	return self;
 }
@@ -175,8 +179,8 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	@autoreleasepool {
 	
 		pmh_element **result = [self parse];
-    [self convertOffsets:result];
-		
+        [self convertOffsets:result];
+
 		[self
 		 performSelectorOnMainThread:@selector(parserDidParse:)
 		 withObject:[NSValue valueWithPointer:result]
@@ -355,10 +359,31 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	[[self.targetTextView textStorage] endEditing];
 }
 
-- (void) applyVisibleRangeHighlighting
+- (void) applyHighlighting
 {
     NSLayoutManager *layoutManager = [self.targetTextView layoutManager];
-	NSRange visibleGlyphRange = [layoutManager glyphRangeForTextContainer:[self.targetTextView textContainer]];
+    NSRange visibleGlyphRange = [layoutManager glyphRangeForTextContainer:[self.targetTextView textContainer]];
+    NSRange visibleCharRange = [layoutManager characterRangeForGlyphRange:visibleGlyphRange actualGlyphRange:NULL];
+    
+    if (_cachedElements == NULL)
+        return;
+    
+    @try {
+        [self applyHighlighting:_cachedElements withRange:visibleCharRange];
+    }
+    @catch (NSException *exception) {
+        NSLog(@"Exception in -applyHighlighting:withRange: %@", exception);
+    }
+    
+    if (self.resetTypingAttributes)
+        [self.targetTextView setTypingAttributes:self.defaultTypingAttributes];
+}
+
+- (void) applyVisibleRangeHighlighting
+{
+    NSRect visibleRect = [[[self.targetTextView enclosingScrollView] contentView] documentVisibleRect];
+    NSLayoutManager *layoutManager = [self.targetTextView layoutManager];
+    NSRange visibleGlyphRange = [layoutManager glyphRangeForBoundingRect:visibleRect inTextContainer:[self.targetTextView textContainer]];
 	NSRange visibleCharRange = [layoutManager characterRangeForGlyphRange:visibleGlyphRange actualGlyphRange:NULL];
 
 	if (_cachedElements == NULL)
@@ -402,13 +427,22 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	if (_workerThreadResultsInvalid)
 		return;
 	[self cacheElementList:(pmh_element **)[resultPointer pointerValue]];
-	[self applyVisibleRangeHighlighting];
+
+    if (hightlighAllAfterParse == YES)
+    {
+        [self applyHighlighting];
+    }
+    else
+    {
+        [self applyVisibleRangeHighlighting];
+    }
 }
 
 
 - (void) textViewUpdateTimerFire:(NSTimer*)timer
 {
 	self.updateTimer = nil;
+    hightlighAllAfterParse = NO;
 	[self requestParsing];
 }
 
@@ -635,10 +669,16 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 		[self readClearTextStylesFromTextView];
 }
 
-
 - (void) parseAndHighlightNow
 {
+    hightlighAllAfterParse = NO;
 	[self requestParsing];
+}
+
+- (void) parseAndHighlightAll
+{
+    hightlighAllAfterParse = YES;
+    [self requestParsing];
 }
 
 - (void) highlightNow
@@ -646,15 +686,21 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	[self applyVisibleRangeHighlighting];
 }
 
+- (void) highlightAll
+{
+    [self applyHighlighting];
+}
+
 - (void) activate
 {
 	// todo: throw exception if targetTextView is nil?
-	
+
 	if (self.styles == nil)
 		self.styles = [self getDefaultStyles];
 	if (_styleDependenciesPending)
 		[self applyStyleDependenciesToTargetTextView];
-	
+
+    hightlighAllAfterParse = NO;
 	[self requestParsing];
 	
 	if (self.parseAndHighlightAutomatically)
@@ -663,7 +709,7 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 		 selector:@selector(textViewTextDidChange:)
 		 name:NSTextDidChangeNotification
 		 object:self.targetTextView];
-	
+
 	self.isActive = YES;
 }
 
@@ -676,7 +722,7 @@ void styleparsing_error_callback(char *error_message, int line_number, void *con
 	 removeObserver:self
 	 name:NSTextDidChangeNotification
 	 object:self.targetTextView];
-	
+
 	[self clearElementsCache];
 	self.isActive = NO;
 }
